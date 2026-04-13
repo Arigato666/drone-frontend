@@ -3,9 +3,9 @@
 </script>
 
 <template>
-<div>
-<router-view /> <!-- 子页面会渲染在这里 -->
-</div>
+	<div class="menu-module-dark">
+		<router-view />
+	</div>
 </template>
 
 <style lang="css">

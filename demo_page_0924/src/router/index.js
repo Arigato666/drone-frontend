@@ -190,4 +190,18 @@ const router = createRouter({
   scrollBehavior: () => ({ left: 0, top: 0 })
 })
 
+const AUTH_STORAGE_KEY = 'uav-auth-user'
+
+router.beforeEach((to) => {
+  if (!String(to.path || '').startsWith('/system')) return true
+
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+    const user = raw ? JSON.parse(raw) : null
+    if (user?.role === 'admin') return true
+  } catch {}
+
+  return '/home'
+})
+
 export default router

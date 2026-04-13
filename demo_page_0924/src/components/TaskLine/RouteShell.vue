@@ -1,6 +1,6 @@
 <!-- src/components/TaskLine/RouteShell.vue -->
 <template>
-  <div class="shell">
+  <div class="shell menu-module-dark">
     <!-- 航线任务列表 -->
     <RoutePlan
       v-show="currentView === 'RoutePlan'"

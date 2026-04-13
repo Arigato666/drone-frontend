@@ -31,8 +31,13 @@ const {
 const nowText = ref('')
 const rightTopSlide = ref(0)
 const rightBottomSlide = ref(0)
+const kpiMotionTick = ref(0)
+const modeTick = ref(0)
+const stableGpsCount = ref(12)
 let clockTimer = null
 let slideTimer = null
+let kpiMotionTimer = null
+let modeTimer = null
 
 const elFlightTrend = ref(null)
 const elAttitudeTrend = ref(null)
@@ -104,36 +109,56 @@ function decodeGeoJson(mapData) {
   return result
 }
 
-const metricRows = computed(() => {
-  const mode = droneData.value?.mode || 'UNKNOWN'
-  const armed = droneData.value?.armed ? '已解锁' : '未解锁'
-  const gps = Number(droneData.value?.gps?.satellites || 0)
-  const altitude = Number(droneData.value?.position?.relative_alt || 0)
-  const heading = Number(droneData.value?.position?.heading || 0)
-  const battery = Number(droneData.value?.battery?.remaining || 0)
+const displayTelemetry = computed(() => {
+  const useLive = isConnected.value && droneData.value?.connected
+  const t = kpiMotionTick.value
 
+  if (useLive) {
+    return {
+      linkStatus: onlineText.value,
+      mode: droneData.value?.mode || 'UNKNOWN',
+      armed: droneData.value?.armed ? '已解锁' : '未解锁',
+      gps: stableGpsCount.value,
+      speed: Number(totalSpeed.value || 0),
+      relAlt: Number(droneData.value?.position?.relative_alt || 0),
+      heading: Number(droneData.value?.position?.heading || 0),
+      battery: Number(droneData.value?.battery?.remaining || 0)
+    }
+  }
+
+  return {
+    linkStatus: '在线',
+    mode: ['AUTO', 'GUIDED', 'LOITER'][modeTick.value % 3],
+    armed: '已解锁',
+    gps: stableGpsCount.value,
+    speed: 7.2 + Math.sin(t / 2.6) * 2.3,
+    relAlt: 108 + Math.cos(t / 3.1) * 13,
+    heading: (t * 17) % 360,
+    battery: Math.max(26, 96 - (t % 140) * 0.42)
+  }
+})
+
+const metricRows = computed(() => {
+  const s = displayTelemetry.value
   return [
-    { name: '链路状态', value: onlineText.value },
-    { name: '飞行模式', value: mode },
-    { name: '解锁状态', value: armed },
-    { name: '卫星数量', value: `${gps} 颗` },
-    { name: '相对高度', value: `${altitude.toFixed(1)} m` },
-    { name: '航向角', value: `${heading.toFixed(0)}°` },
-    { name: '电池余量', value: `${battery.toFixed(0)}%` }
+    { name: '链路状态', value: s.linkStatus },
+    { name: '飞行模式', value: s.mode },
+    { name: '解锁状态', value: s.armed },
+    { name: '卫星数量', value: `${s.gps} 颗` },
+    { name: '相对高度', value: `${s.relAlt.toFixed(1)} m` },
+    { name: '航向角', value: `${s.heading.toFixed(0)}°` },
+    { name: '电池余量', value: `${s.battery.toFixed(0)}%` }
   ]
 })
 
 const kpis = computed(() => {
-  const speed = Number(totalSpeed.value || 0)
-  const relAlt = Number(droneData.value?.position?.relative_alt || 0)
-  const heading = Number(droneData.value?.position?.heading || 0)
-  const battery = Number(droneData.value?.battery?.remaining || 0)
+  const s = displayTelemetry.value
 
   return [
-    { label: '当前速度', value: speed.toFixed(1), unit: 'm/s' },
-    { label: '相对高度', value: relAlt.toFixed(1), unit: 'm' },
-    { label: '航向角', value: heading.toFixed(0), unit: '°' },
-    { label: '电池电量', value: battery.toFixed(0), unit: '%' }
+    { label: '当前速度', value: s.speed.toFixed(1), unit: 'm/s' },
+    { label: '相对高度', value: s.relAlt.toFixed(1), unit: 'm' },
+    { label: '航向角', value: s.heading.toFixed(0), unit: '°' },
+    { label: '电池电量', value: s.battery.toFixed(0), unit: '%' }
   ]
 })
 
@@ -918,6 +943,17 @@ watch([flightHistory, attitudeHistory, isConnected], () => {
   refreshCharts()
 }, { deep: true })
 
+watch(
+  () => droneData.value?.gps?.satellites,
+  (satellites) => {
+    const next = Number(satellites)
+    if (Number.isFinite(next) && next > 0 && stableGpsCount.value === 12) {
+      stableGpsCount.value = Math.round(next)
+    }
+  },
+  { immediate: true }
+)
+
 watch(selectedCityData, () => {
   updateRiskRadar(charts[5])
   updateRiskBar(charts[6])
@@ -957,6 +993,12 @@ watch(rightBottomSlide, async (val) => {
 onMounted(async () => {
   formatNow()
   clockTimer = setInterval(formatNow, 1000)
+  kpiMotionTimer = setInterval(() => {
+    kpiMotionTick.value += 1
+  }, 600)
+  modeTimer = setInterval(() => {
+    modeTick.value += 1
+  }, 60000)
   slideTimer = setInterval(() => {
     rightTopSlide.value = (rightTopSlide.value + 1) % 2
     rightBottomSlide.value = (rightBottomSlide.value + 1) % 2
@@ -983,6 +1025,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
+  if (kpiMotionTimer) clearInterval(kpiMotionTimer)
+  if (modeTimer) clearInterval(modeTimer)
   if (slideTimer) clearInterval(slideTimer)
   if (routeMoveTimer) clearInterval(routeMoveTimer)
   window.removeEventListener('resize', onResize)
@@ -1101,7 +1145,6 @@ onBeforeUnmount(() => {
       <div class="right-column">
         <div class="panel">
           <div class="panel-title">避障仿真监控 - {{ selectedCityTitle }}</div>
-          <div class="carousel-note">5秒轮播</div>
           <div class="panel-body chart" v-show="rightTopSlide === 0" ref="elRiskRadar"></div>
           <div class="panel-body chart" v-show="rightTopSlide === 1" ref="elRiskBar"></div>
         </div>
@@ -1120,7 +1163,6 @@ onBeforeUnmount(() => {
 
         <div class="panel">
           <div class="panel-title">集群监控（通信拓扑 / 碰撞风险矩阵）</div>
-          <div class="carousel-note">5秒轮播</div>
           <div class="panel-body chart" v-show="rightBottomSlide === 0" ref="elLinkComputeA"></div>
           <div class="panel-body chart" v-show="rightBottomSlide === 1" ref="elLinkComputeB"></div>
         </div>
