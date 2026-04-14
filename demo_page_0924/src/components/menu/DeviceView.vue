@@ -3,11 +3,13 @@
 </script>
 
 <template>
-  <router-view v-slot="{ Component }">
-    <keep-alive include="DeviceAirport,DeviceDrone">
-      <component :is="Component" />
-    </keep-alive>
-  </router-view>
+  <div class="menu-module-dark">
+    <router-view v-slot="{ Component }">
+      <keep-alive include="DeviceAirport,DeviceDrone">
+        <component :is="Component" />
+      </keep-alive>
+    </router-view>
+  </div>
 </template>
 <style scoped>
 </style>

@@ -72,7 +72,6 @@
 
 <script>
 import * as Cesium from 'cesium';
-window.CESIUM_BASE_URL = "/node_modules/cesium/Build/Cesium/";
 import { ArcGisMapServerImageryProvider } from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import RightPanel from '../Home/RightPanel.vue';
@@ -596,6 +595,8 @@ export default {
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
       } catch (error) {
         console.error('Error loading map:', error);
+        // 地图初始化失败时直接退出，避免继续访问未创建的 viewer 导致页面崩溃
+        return;
       }
       const handler = new Cesium.ScreenSpaceEventHandler(this.viewer.scene.canvas);
 

@@ -130,7 +130,6 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { defineProps, defineEmits } from 'vue';
 import dockers from '@/test-data/dockers.json';
 
 const props = defineProps({

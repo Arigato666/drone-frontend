@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="menu-module-dark">
     <!-- <h2 style="margin-bottom: 10px;">成果数据模块</h2> -->
     <router-view /> <!-- 子页面会渲染在这里 -->
   </div>

@@ -386,6 +386,75 @@ function busEmit(name, detail) {
 const DEFAULT_CREATOR = 'user'
 const DEFAULT_START   = '2025-09-01'
 const DEFAULT_CLOUD   = '已同步'
+const AUTH_STORAGE_KEY = 'uav-auth-user'
+
+const CREATOR_POOL = [
+  '王皓',
+  '李薇',
+  '陈航',
+  '周宁',
+  '赵磊',
+  '刘洋',
+  '孙萌',
+  '马骁'
+]
+
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+function formatDateTime(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+}
+
+function hashSeed(text = '') {
+  let h = 0
+  for (let i = 0; i < text.length; i += 1) {
+    h = (h * 31 + text.charCodeAt(i)) >>> 0
+  }
+  return h
+}
+
+function buildMetaFallback(item = {}, index = 0) {
+  const seed = hashSeed(`${item.id || ''}|${item.name || ''}|${item.takeoff || item.startStation || ''}`) + index * 97
+  const creator = CREATOR_POOL[seed % CREATOR_POOL.length]
+  const base = new Date('2026-04-13T08:20:00')
+  const minuteOffset = (seed % 1800)
+  const date = new Date(base.getTime() - minuteOffset * 60000)
+  return {
+    creator,
+    startTime: formatDateTime(date)
+  }
+}
+
+function normalizeTaskMeta(item = {}, index = 0) {
+  const meta = buildMetaFallback(item, index)
+  const creatorRaw = String(item.creator || '').trim()
+  const startRaw = String(item.startTime || '').trim()
+  const creatorPlaceholder = !creatorRaw || ['user', 'admin', 'adminpc'].includes(creatorRaw.toLowerCase())
+  const startPlaceholder = !startRaw || startRaw === DEFAULT_START
+
+  return {
+    ...item,
+    creator: creatorPlaceholder ? meta.creator : creatorRaw,
+    startTime: startPlaceholder ? meta.startTime : startRaw
+  }
+}
+
+function getCurrentOperator() {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+    const user = raw ? JSON.parse(raw) : null
+    const name = String(user?.displayName || user?.username || '').trim()
+    return name || '调度员'
+  } catch {
+    return '调度员'
+  }
+}
+
+function nowTimeText() {
+  return formatDateTime(new Date())
+}
 
 /** ===== props / emit ===== */
 const props = defineProps({
@@ -443,11 +512,11 @@ function stashMapSnapshot(snap) {
 const presetRoutesRef = ref(
   (taskData || [])
     .filter(r => r?.preset3d || r?.preset3dKey)
-    .map(r => {
+    .map((r, idx) => {
       const normType = Array.isArray(r.type)
         ? r.type.map(x => (x ?? '').toString().trim()).filter(Boolean)
         : (r.type || r.routeType || '预设航线')
-      return {
+      return normalizeTaskMeta({
         ...r,
         id: r.id || (r.preset3d || r.preset3dKey),
         preset3d: r.preset3d || r.preset3dKey,
@@ -458,7 +527,7 @@ const presetRoutesRef = ref(
         startStation: r.startStation || r.takeoff || '',
         endStation: r.endStation || r.landing || r.destination || '',
         type: Array.isArray(normType) && normType.length === 0 ? '预设航线' : normType
-      }
+      }, idx)
     })
 )
 const ALLOWED_PRESET_KEYS = new Set(
@@ -467,7 +536,7 @@ const ALLOWED_PRESET_KEYS = new Set(
 const allData = ref(
   (taskData || [])
     .filter(r => !(r?.preset3d || r?.preset3dKey))
-    .map(r => ({
+    .map((r, idx) => normalizeTaskMeta({
       ...r,
       id: r.id || `task-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       thumbnailUrl: r.thumbnailUrl || '/media/thumbnails/default.png',
@@ -481,7 +550,7 @@ const allData = ref(
       startTime: r.startTime || DEFAULT_START,
       startStation: r.startStation || r.takeoff || '',
       endStation: r.endStation || r.landing || r.destination || ''
-    }))
+    }, idx))
 )
 // 合并历史新增
 try {
@@ -489,6 +558,7 @@ try {
   if (Array.isArray(saved) && saved.length) {
     const map = new Map(allData.value.map(i => [i.id, i]))
     saved.forEach(item => { if (!map.has(item.id)) allData.value.push(item) })
+    allData.value = allData.value.map((item, idx) => normalizeTaskMeta(item, idx))
   }
 } catch {}
 
@@ -607,7 +677,7 @@ const submitTask = () => {
   }
 
   // 普通任务：先创建列表项，再进入地图
-  const nowStr = DEFAULT_START
+  const nowStr = nowTimeText()
   const id = `task-${Date.now()}`
   const task = {
     id,
@@ -619,7 +689,7 @@ const submitTask = () => {
     startTime: nowStr,
     endTime: nowStr,
     status: '完成',
-    creator: DEFAULT_CREATOR,
+    creator: getCurrentOperator(),
     media: [],
     thumbnailUrl: '/media/thumbnails/default.png',
     location: '未设置',
@@ -856,15 +926,15 @@ const handleBeforeUpload = (file) => {
       const text = event.target.result
       const json = JSON.parse(text)
       const savedRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '{}')
-      const nowStr = DEFAULT_START
+      const nowStr = nowTimeText()
       const pushOne = (task) => {
         const id = `task-${Date.now()}-${Math.random().toString(36).slice(2)}`
-        const t = {
+        const t = normalizeTaskMeta({
           ...task,
           id,
           thumbnailUrl: task.thumbnailUrl || '/media/thumbnails/default.png',
           startTime: task.startTime || nowStr,
-          creator: task.creator || DEFAULT_CREATOR,
+          creator: task.creator || getCurrentOperator(),
           location: task.location || '未设置',
           cloud: task.cloud || DEFAULT_CLOUD,
           media: task.media || [],
@@ -876,7 +946,7 @@ const handleBeforeUpload = (file) => {
           expectedFinish: task.expectedFinish ?? task.estimatedHours ?? '',
           startStation:   task.startStation || task.takeoff || '',
           endStation:     task.endStation || task.landing || task.destination || ''
-        }
+        }, allData.value.length)
         allData.value = [t, ...allData.value]
         if (t.routeData) savedRoutes[t.id] = t.routeData
 
